@@ -53,10 +53,13 @@ const Dashboard = () => {
     }
   });
 
-  // Sort tasks into categories
+  // Sort tasks into categories and filter out completed tasks for display
   tasks.forEach(task => {
     const category = task.category || 'Morning Routine';
-    tasksByCategory[category].push(task);
+    // Only show tasks that are not done or are in the process of being completed (for animation)
+    if (task.status !== 'done' || (task.justCompleted && Date.now() - (task.updatedAt || Date.now()) < 1000)) {
+      tasksByCategory[category].push(task);
+    }
   });
 
   // Calculate points and completion stats
@@ -93,26 +96,57 @@ const Dashboard = () => {
     
     setLoading(true);
     
-    // Apply immediate visual feedback
-    const updatedTasks = tasks.map(t => 
-      t._id === task._id ? { ...t, status: newStatus } : t
-    );
+    // Immediately update local state for instant feedback
+    if (newStatus === 'done') {
+      // For completed tasks, mark them with animation class
+      const updatedTasksWithAnimation = tasks.map(t => 
+        t._id === task._id ? { 
+          ...t, 
+          status: newStatus,
+          justCompleted: true
+        } : t
+      );
+      
+      // Update local state immediately to show animation
+      const updatedStats = calculateStats();
+      
+      // Force immediate UI update
+      setRefreshTrigger(prev => !prev);
+      
+      // Set a timeout to remove completed tasks from view after animation
+      setTimeout(() => {
+        // This will trigger a re-render without the completed task
+        setRefreshTrigger(prev => !prev);
+      }, 800); // Shorter delay for better UX
+    } else {
+      // For reopened tasks, update immediately
+      const updatedTasks = tasks.map(t => 
+        t._id === task._id ? { ...t, status: newStatus } : t
+      );
+      setRefreshTrigger(prev => !prev);
+    }
     
-    // Force re-render
-    setRefreshTrigger(prev => !prev);
-    
+    // Send update to server
     updateTask(task._id, { status: newStatus })
-      .then((response) => {
-        if (response.success) {
-          console.log(`Task ${task.title} marked as ${newStatus}`);
-        } else {
-          console.error('Failed to update task status');
-        }
+      .then(() => {
+        // Update was successful
         setLoading(false);
+        
+        // Force another refresh to update stats with server data
+        setRefreshTrigger(prev => !prev);
       })
       .catch(error => {
-        console.error('Error toggling task status:', error);
+        console.error('Error updating task:', error);
         setLoading(false);
+        
+        // Revert the task status in case of error
+        const revertedTasks = tasks.map(t => 
+          t._id === task._id ? { ...t, status: task.status } : t
+        );
+        setRefreshTrigger(prev => !prev);
+        
+        // Alert user of error
+        alert('Failed to update task. Please try again.');
       });
   }, [tasks, tasksLoading, loading, updateTask]);
   
@@ -512,7 +546,11 @@ const Dashboard = () => {
                   </EmptyCategory>
                 ) : (
                   categoryTasks.map(task => (
-                    <TaskItem key={task._id}>
+                    <TaskItem 
+                      key={task._id} 
+                      className={task.status === 'done' || task.justCompleted ? 'completed' : ''}
+                      data-task-id={task._id}
+                    >
                       <Checkbox 
                         type="checkbox" 
                         checked={task.status === 'done'}
@@ -521,7 +559,7 @@ const Dashboard = () => {
                         id={`task-checkbox-${task._id}`}
                       />
                       <TaskContent>
-                        <TaskTitle className={task.status === 'done' ? 'completed' : ''}>
+                        <TaskTitle className={task.status === 'done' || task.justCompleted ? 'completed' : ''}>
                           {task.title}
                         </TaskTitle>
                         <TaskDescription>{task.description}</TaskDescription>
@@ -790,11 +828,11 @@ const ResetDescription = styled.span`
 `;
 
 const CategorySection = styled.div`
-  background-color: #2c3e50;
+  background-color: #1e293b;
   border-radius: 12px;
-  margin-bottom: 1.5rem;
   padding: 1.5rem;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.15);
+  margin-bottom: 1.5rem;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
   border-left: 4px solid #3498db;
   width: 100%;
   transition: transform 0.3s ease, box-shadow 0.3s ease;
@@ -836,16 +874,42 @@ const PointsTotal = styled.span`
 const TaskItem = styled.div`
   display: flex;
   align-items: center;
-  background-color: #34495e;
+  padding: 12px;
   border-radius: 8px;
-  padding: 0.85rem 1.25rem;
-  margin-bottom: 0.85rem;
-  transition: all 0.2s;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  margin-bottom: 8px;
+  background-color: #2c3e50;
+  color: #ecf0f1;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  transition: all 0.3s ease-in-out;
   
   &:hover {
-    background-color: #3a536b;
-    transform: translateX(3px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+    background-color: #34495e;
+  }
+  
+  &.completed {
+    animation: slideOut 1s forwards;
+    opacity: 0.7;
+    background-color: #2c3e50;
+  }
+  
+  @keyframes slideOut {
+    0% {
+      transform: translateX(0);
+      opacity: 1;
+    }
+    70% {
+      opacity: 0.7;
+      transform: translateX(5%);
+    }
+    100% {
+      transform: translateX(100%);
+      opacity: 0;
+      height: 0;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+    }
   }
 `;
 
@@ -853,29 +917,34 @@ const Checkbox = styled.input`
   appearance: none;
   width: 24px;
   height: 24px;
+  border: 2px solid #3498db;
+  border-radius: 6px;
   margin-right: 16px;
   cursor: pointer;
-  border-radius: 4px;
-  border: 2px solid #6c5ce7;
-  background-color: ${props => props.checked ? '#6c5ce7' : 'transparent'};
   position: relative;
-  transition: all 0.2s ease;
-  
-  &:hover {
-    border-color: #5a4de6;
-    transform: scale(1.05);
-  }
+  transition: all 0.2s;
+  background-color: rgba(52, 152, 219, 0.1);
+  flex-shrink: 0;
   
   &:checked {
-    background-color: #6c5ce7;
-    &:after {
-      content: '✓';
-      position: absolute;
-      color: white;
-      font-size: 16px;
-      top: -1px;
-      left: 4px;
-    }
+    background-color: #3498db;
+    border-color: #2980b9;
+    box-shadow: 0 0 5px rgba(52, 152, 219, 0.5);
+  }
+  
+  &:checked::after {
+    content: '✓';
+    position: absolute;
+    color: white;
+    font-size: 16px;
+    top: 0px;
+    left: 5px;
+  }
+  
+  &:hover {
+    border-color: #2980b9;
+    transform: scale(1.05);
+    box-shadow: 0 0 8px rgba(52, 152, 219, 0.4);
   }
   
   &:disabled {
@@ -889,11 +958,11 @@ const TaskContent = styled.div`
   overflow: hidden;
 `;
 
-const TaskTitle = styled.div`
+const TaskTitle = styled.h3`
+  margin: 0;
   font-size: 1rem;
-  color: #fff;
-  margin-bottom: 0.25rem;
-  transition: text-decoration 0.3s ease;
+  font-weight: 600;
+  color: #ecf0f1;
   
   &.completed {
     text-decoration: line-through;
@@ -903,7 +972,8 @@ const TaskTitle = styled.div`
 
 const TaskDescription = styled.div`
   font-size: 0.85rem;
-  color: rgba(255, 255, 255, 0.7);
+  color: #bdc3c7;
+  margin-top: 4px;
 `;
 
 const TaskPoints = styled.div`

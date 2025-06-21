@@ -6,43 +6,10 @@ const API_URL = 'http://localhost:5002/api';
 
 const TaskContext = createContext();
 
-// Mock tasks for development
-const mockTasks = [
-  {
-    _id: '1',
-    title: 'Complete project setup',
-    description: 'Set up the initial project structure and dependencies',
-    status: 'done',
-    priority: 'high',
-    dueDate: new Date(Date.now() + 86400000).toISOString(), // tomorrow
-    xpReward: 10,
-    completionXp: 30,
-    completedAt: new Date().toISOString()
-  },
-  {
-    _id: '2',
-    title: 'Design user interface',
-    description: 'Create wireframes and mockups for the main screens',
-    status: 'open',
-    priority: 'medium',
-    dueDate: new Date(Date.now() + 172800000).toISOString(), // day after tomorrow
-    xpReward: 10,
-    completionXp: 30
-  },
-  {
-    _id: '3',
-    title: 'Implement authentication',
-    description: 'Add login and registration functionality',
-    status: 'open',
-    priority: 'high',
-    dueDate: new Date(Date.now() + 259200000).toISOString(), // 3 days from now
-    xpReward: 10,
-    completionXp: 30
-  }
-];
+// No more hardcoded mock tasks - users will add their own
 
 export const TaskProvider = ({ children }) => {
-  const [tasks, setTasks] = useState(mockTasks);
+  const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const { user, updateUserData } = useContext(AuthContext);
@@ -71,8 +38,8 @@ export const TaskProvider = ({ children }) => {
       setLoading(false);
     } catch (err) {
       console.error('Error fetching tasks:', err.message);
-      // Fall back to mock tasks
-      setTasks(mockTasks);
+      // Fall back to empty array
+      setTasks([]);
       setLoading(false);
     }
   };
