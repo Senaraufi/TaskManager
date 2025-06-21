@@ -1,18 +1,12 @@
 import React, { useContext } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import styled from 'styled-components';
-import { FaTasks, FaSignOutAlt, FaTrophy } from 'react-icons/fa';
+import { FaTasks, FaTrophy } from 'react-icons/fa';
 import AuthContext from '../../context/AuthContext';
 import LevelProgress from '../gamification/LevelProgress';
 
 const Header = () => {
-  const { user, logout } = useContext(AuthContext);
-  const navigate = useNavigate();
-
-  const handleLogout = () => {
-    logout();
-    navigate('/login');
-  };
+  const { user } = useContext(AuthContext);
 
   return (
     <HeaderContainer>
@@ -20,29 +14,19 @@ const Header = () => {
         <FaTasks /> LevelUp Tasks
       </Logo>
       
-      {user ? (
-        <NavContainer>
-          <UserInfo>
-            <Username>{user.username}</Username>
-            {user && <LevelProgress />}
-          </UserInfo>
-          
-          <NavLinks>
-            <NavLink to="/dashboard">Dashboard</NavLink>
-            <NavLink to="/leaderboard">
-              <FaTrophy /> Leaderboard
-            </NavLink>
-            <LogoutButton onClick={handleLogout}>
-              <FaSignOutAlt /> Logout
-            </LogoutButton>
-          </NavLinks>
-        </NavContainer>
-      ) : (
+      <NavContainer>
+        <UserInfo>
+          <Username>{user?.username || 'TestUser'}</Username>
+          {user && <LevelProgress />}
+        </UserInfo>
+        
         <NavLinks>
-          <NavLink to="/login">Login</NavLink>
-          <NavLink to="/register">Register</NavLink>
+          <NavLink to="/dashboard">Dashboard</NavLink>
+          <NavLink to="/leaderboard">
+            <FaTrophy /> Leaderboard
+          </NavLink>
         </NavLinks>
-      )}
+      </NavContainer>
     </HeaderContainer>
   );
 };

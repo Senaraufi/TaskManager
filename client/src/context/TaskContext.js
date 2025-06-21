@@ -1,11 +1,45 @@
 import { createContext, useState, useContext, useEffect } from 'react';
-import axios from 'axios';
 import AuthContext from './AuthContext';
 
 const TaskContext = createContext();
 
+// Mock tasks for development
+const mockTasks = [
+  {
+    _id: '1',
+    title: 'Complete project setup',
+    description: 'Set up the initial project structure and dependencies',
+    status: 'done',
+    priority: 'high',
+    dueDate: new Date(Date.now() + 86400000).toISOString(), // tomorrow
+    xpReward: 10,
+    completionXp: 30,
+    completedAt: new Date().toISOString()
+  },
+  {
+    _id: '2',
+    title: 'Design user interface',
+    description: 'Create wireframes and mockups for the main screens',
+    status: 'open',
+    priority: 'medium',
+    dueDate: new Date(Date.now() + 172800000).toISOString(), // day after tomorrow
+    xpReward: 10,
+    completionXp: 30
+  },
+  {
+    _id: '3',
+    title: 'Implement authentication',
+    description: 'Add login and registration functionality',
+    status: 'open',
+    priority: 'high',
+    dueDate: new Date(Date.now() + 259200000).toISOString(), // 3 days from now
+    xpReward: 10,
+    completionXp: 30
+  }
+];
+
 export const TaskProvider = ({ children }) => {
-  const [tasks, setTasks] = useState([]);
+  const [tasks, setTasks] = useState(mockTasks);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const { user, updateUserData } = useContext(AuthContext);
@@ -13,100 +47,129 @@ export const TaskProvider = ({ children }) => {
   // Load tasks when user changes
   useEffect(() => {
     if (user) {
-      fetchTasks();
+      // Simulate API call
+      setLoading(true);
+      setTimeout(() => {
+        setTasks(mockTasks);
+        setLoading(false);
+      }, 500);
     } else {
       setTasks([]);
     }
   }, [user]);
 
-  // Fetch all tasks for the current user
-  const fetchTasks = async () => {
-    if (!user) return;
+  // Fetch all tasks (mock implementation)
+  const fetchTasks = () => {
+    setLoading(true);
+    setTimeout(() => {
+      setTasks(mockTasks);
+      setLoading(false);
+    }, 500);
+  };
+
+  // Create a new task (mock implementation)
+  const createTask = (taskData) => {
+    setLoading(true);
     
-    try {
-      setLoading(true);
-      setError(null);
-      
-      const response = await axios.get('/api/tasks');
-      setTasks(response.data);
-      
-      setLoading(false);
-    } catch (error) {
-      setLoading(false);
-      setError(error.response?.data?.message || 'Failed to fetch tasks');
-      console.error('Error fetching tasks:', error);
-    }
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        const newTask = {
+          _id: Date.now().toString(),
+          ...taskData,
+          status: 'open',
+          xpReward: 10,
+          completionXp: 30,
+          createdAt: new Date().toISOString()
+        };
+        
+        setTasks([newTask, ...tasks]);
+        
+        // Mock user XP update
+        const updatedUser = {
+          ...user,
+          xp: user.xp + 10
+        };
+        
+        // Check if user should level up
+        if (updatedUser.xp >= updatedUser.xpToNextLevel) {
+          updatedUser.level += 1;
+          updatedUser.xp = updatedUser.xp - updatedUser.xpToNextLevel;
+          updatedUser.xpToNextLevel = 100 + (updatedUser.level * 20);
+        }
+        
+        updateUserData(updatedUser);
+        setLoading(false);
+        
+        resolve({
+          task: newTask,
+          user: updatedUser
+        });
+      }, 500);
+    });
   };
 
-  // Create a new task
-  const createTask = async (taskData) => {
-    try {
-      setLoading(true);
-      setError(null);
-      
-      const response = await axios.post('/api/tasks', taskData);
-      
-      // Add new task to state
-      setTasks([response.data.task, ...tasks]);
-      
-      // Update user level and XP
-      if (response.data.user) {
-        updateUserData(response.data.user);
-      }
-      
-      setLoading(false);
-      return response.data;
-    } catch (error) {
-      setLoading(false);
-      setError(error.response?.data?.message || 'Failed to create task');
-      throw error;
-    }
+  // Update a task (mock implementation)
+  const updateTask = (id, taskData) => {
+    setLoading(true);
+    
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        const taskIndex = tasks.findIndex(task => task._id === id);
+        if (taskIndex === -1) {
+          setLoading(false);
+          return;
+        }
+        
+        const oldTask = tasks[taskIndex];
+        const wasCompleted = oldTask.status !== 'done' && taskData.status === 'done';
+        
+        const updatedTask = {
+          ...oldTask,
+          ...taskData,
+          completedAt: wasCompleted ? new Date().toISOString() : oldTask.completedAt
+        };
+        
+        const updatedTasks = [...tasks];
+        updatedTasks[taskIndex] = updatedTask;
+        setTasks(updatedTasks);
+        
+        let updatedUser = { ...user };
+        
+        // If task was completed, award XP
+        if (wasCompleted) {
+          updatedUser.xp += updatedTask.completionXp;
+          
+          // Check if user should level up
+          if (updatedUser.xp >= updatedUser.xpToNextLevel) {
+            updatedUser.level += 1;
+            updatedUser.xp = updatedUser.xp - updatedUser.xpToNextLevel;
+            updatedUser.xpToNextLevel = 100 + (updatedUser.level * 20);
+          }
+          
+          updateUserData(updatedUser);
+        }
+        
+        setLoading(false);
+        
+        resolve({
+          task: updatedTask,
+          user: wasCompleted ? updatedUser : null
+        });
+      }, 500);
+    });
   };
 
-  // Update a task
-  const updateTask = async (id, taskData) => {
-    try {
-      setLoading(true);
-      setError(null);
-      
-      const response = await axios.put(`/api/tasks/${id}`, taskData);
-      
-      // Update task in state
-      setTasks(tasks.map(task => 
-        task._id === id ? response.data.task : task
-      ));
-      
-      // Update user level and XP if task was completed
-      if (response.data.user) {
-        updateUserData(response.data.user);
-      }
-      
-      setLoading(false);
-      return response.data;
-    } catch (error) {
-      setLoading(false);
-      setError(error.response?.data?.message || 'Failed to update task');
-      throw error;
-    }
-  };
-
-  // Delete a task
-  const deleteTask = async (id) => {
-    try {
-      setLoading(true);
-      setError(null);
-      
-      await axios.delete(`/api/tasks/${id}`);
-      
-      // Remove task from state
-      setTasks(tasks.filter(task => task._id !== id));
-      
-      setLoading(false);
-    } catch (error) {
-      setLoading(false);
-      setError(error.response?.data?.message || 'Failed to delete task');
-      throw error;
-    }
+  // Delete a task (mock implementation)
+  const deleteTask = (id) => {
+    setLoading(true);
+    
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        setTasks(tasks.filter(task => task._id !== id));
+        setLoading(false);
+        resolve();
+      }, 500);
+    });
   };
 
   return (
