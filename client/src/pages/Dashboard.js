@@ -1,12 +1,30 @@
-import React, { useContext, useState, useEffect } from 'react';
+import React, { useContext, useState, useEffect, useCallback } from 'react';
 import styled from 'styled-components';
 import TaskContext from '../context/TaskContext';
 import AuthContext from '../context/AuthContext';
 import { FaStar, FaPlus, FaTrash, FaEdit, FaTimes } from 'react-icons/fa';
 
 const Dashboard = () => {
-  const { tasks, loading, updateTask, createTask, deleteTask } = useContext(TaskContext);
+  const { tasks, loading: tasksLoading, updateTask, createTask, deleteTask } = useContext(TaskContext);
   const { user } = useContext(AuthContext);
+  
+  // State variables - defined at the top to avoid initialization errors
+  const [loading, setLoading] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
+  const [showAddTaskForm, setShowAddTaskForm] = useState(false);
+  const [editingTask, setEditingTask] = useState(null);
+  const [refreshTrigger, setRefreshTrigger] = useState(false);
+  const [newTask, setNewTask] = useState({
+    title: '',
+    description: '',
+    category: 'Morning Routine',
+    priority: 'medium',
+    xpReward: 10
+  });
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showCustomCategory, setShowCustomCategory] = useState(false);
+  const [customCategory, setCustomCategory] = useState('');
+  const [activeCategory, setActiveCategory] = useState(null);
   
   // Available categories
   const availableCategories = [
@@ -18,10 +36,6 @@ const Dashboard = () => {
     'Learning',
     'Social'
   ];
-  
-  // State for custom category
-  const [showCustomCategory, setShowCustomCategory] = useState(false);
-  const [customCategory, setCustomCategory] = useState('');
 
   // Group tasks by category
   const tasksByCategory = {};
@@ -72,27 +86,38 @@ const Dashboard = () => {
   const stats = calculateStats();
 
   // Handle task completion toggle
-  const handleTaskToggle = (task) => {
+  const handleTaskToggle = useCallback((task) => {
     const newStatus = task.status === 'done' ? 'open' : 'done';
     // Prevent double-clicking by checking if loading
-    if (loading) return;
+    if (tasksLoading || loading) return;
+    
+    setLoading(true);
+    
+    // Apply immediate visual feedback
+    const updatedTasks = tasks.map(t => 
+      t._id === task._id ? { ...t, status: newStatus } : t
+    );
+    
+    // Force re-render
+    setRefreshTrigger(prev => !prev);
     
     updateTask(task._id, { status: newStatus })
       .then((response) => {
         if (response.success) {
-          // Task updated successfully
           console.log(`Task ${task.title} marked as ${newStatus}`);
         } else {
           console.error('Failed to update task status');
         }
+        setLoading(false);
       })
       .catch(error => {
         console.error('Error toggling task status:', error);
+        setLoading(false);
       });
-  };
+  }, [tasks, tasksLoading, loading, updateTask]);
   
   // Handle adding a new task
-  const handleAddTask = (e) => {
+  const handleAddTask = useCallback((e) => {
     e.preventDefault();
     
     // Validate the form
@@ -119,6 +144,19 @@ const Dashboard = () => {
       xpReward: parseInt(newTask.xpReward) || 10
     };
     
+    // Show optimistic UI update
+    const tempId = `temp-${Date.now()}`;
+    const tempTask = {
+      _id: tempId,
+      ...taskToCreate,
+      status: 'open',
+      createdAt: new Date().toISOString(),
+      isTemporary: true
+    };
+    
+    // Force re-render with the temporary task
+    setRefreshTrigger(prev => !prev);
+    
     createTask(taskToCreate)
       .then(() => {
         // Reset form and hide it
@@ -137,15 +175,43 @@ const Dashboard = () => {
       .catch(error => {
         console.error('Error adding task:', error);
         setIsSubmitting(false);
+        alert('Failed to add task. Please try again.');
       });
-  };
+  }, [newTask, customCategory, activeCategory, createTask]);
   
   // Handle editing a task
-  const handleEditTask = (e) => {
+  const handleEditTask = useCallback((e) => {
     e.preventDefault();
+    
+    if (!editingTask || !newTask.title.trim()) {
+      alert('Please enter a task title');
+      return;
+    }
+    
     setIsSubmitting(true);
     
-    updateTask(editingTask._id, newTask)
+    // Handle custom category if selected
+    let finalCategory = newTask.category;
+    if (newTask.category === 'custom' && customCategory.trim()) {
+      finalCategory = customCategory.trim();
+    }
+    
+    const taskToUpdate = {
+      title: newTask.title.trim(),
+      description: newTask.description.trim(),
+      category: finalCategory,
+      priority: newTask.priority || 'medium'
+    };
+    
+    // Show optimistic UI update
+    const updatedTasks = tasks.map(task => 
+      task._id === editingTask._id ? { ...task, ...taskToUpdate } : task
+    );
+    
+    // Force re-render with the updated task
+    setRefreshTrigger(prev => !prev);
+    
+    updateTask(editingTask._id, taskToUpdate)
       .then(() => {
         // Reset form and hide it
         setNewTask({
@@ -160,21 +226,33 @@ const Dashboard = () => {
       .catch(error => {
         console.error('Error updating task:', error);
         setIsSubmitting(false);
+        alert('Failed to update task. Please try again.');
       });
-  };
+  }, [editingTask, newTask, customCategory, tasks, updateTask]);
   
   // Handle deleting a task
-  const handleDeleteTask = (taskId) => {
+  const handleDeleteTask = useCallback((taskId) => {
     if (window.confirm('Are you sure you want to delete this task?')) {
+      setLoading(true);
+      
+      // Show optimistic UI update by filtering out the deleted task
+      const filteredTasks = tasks.filter(task => task._id !== taskId);
+      
+      // Force re-render with the task removed
+      setRefreshTrigger(prev => !prev);
+      
       deleteTask(taskId)
         .then(() => {
           // Task deleted successfully
+          setLoading(false);
         })
         .catch(error => {
           console.error('Error deleting task:', error);
+          setLoading(false);
+          alert('Failed to delete task. Please try again.');
         });
     }
-  };
+  }, [tasks, deleteTask]);
   
   // Set up edit mode
   const startEditTask = (task) => {
@@ -209,19 +287,7 @@ const Dashboard = () => {
     setShowAddTaskForm(true);
   };
 
-  // State variables
-  const [isResetting, setIsResetting] = useState(false);
-  const [showAddTaskForm, setShowAddTaskForm] = useState(false);
-  const [editingTask, setEditingTask] = useState(null);
-  const [newTask, setNewTask] = useState({
-    title: '',
-    description: '',
-    category: 'Morning Routine',
-    priority: 'medium',
-    xpReward: 10
-  });
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [activeCategory, setActiveCategory] = useState(null);
+  // State variables already declared at the top of the component
   
   // Reset all tasks to open status
   const resetTasks = () => {
@@ -784,11 +850,38 @@ const TaskItem = styled.div`
 `;
 
 const Checkbox = styled.input`
-  height: 22px;
-  width: 22px;
-  margin-right: 1rem;
+  appearance: none;
+  width: 24px;
+  height: 24px;
+  margin-right: 16px;
   cursor: pointer;
-  accent-color: #9b59b6;
+  border-radius: 4px;
+  border: 2px solid #6c5ce7;
+  background-color: ${props => props.checked ? '#6c5ce7' : 'transparent'};
+  position: relative;
+  transition: all 0.2s ease;
+  
+  &:hover {
+    border-color: #5a4de6;
+    transform: scale(1.05);
+  }
+  
+  &:checked {
+    background-color: #6c5ce7;
+    &:after {
+      content: '✓';
+      position: absolute;
+      color: white;
+      font-size: 16px;
+      top: -1px;
+      left: 4px;
+    }
+  }
+  
+  &:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
 `;
 
 const TaskContent = styled.div`
