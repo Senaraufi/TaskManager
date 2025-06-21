@@ -2,10 +2,7 @@ import React, { useContext, useState, useEffect, useCallback } from 'react';
 import styled, { keyframes } from 'styled-components';
 import TaskContext from '../context/TaskContext';
 import AuthContext from '../context/AuthContext';
-import { FaStar, FaPlus, FaTrash, FaEdit, FaTimes, FaTrophy, FaRocket, FaBrain, FaFire, FaMedal, FaCrown, FaGem } from 'react-icons/fa';
-import AchievementNotification from '../components/AchievementNotification';
-import StreakCounter from '../components/StreakCounter';
-import LevelProgress from '../components/LevelProgress';
+import { FaStar, FaPlus, FaTrash, FaEdit, FaTimes, FaTrophy, FaRocket, FaBrain } from 'react-icons/fa';
 import confetti from 'canvas-confetti';
 
 // Function to trigger confetti explosion
@@ -41,13 +38,6 @@ const Dashboard = () => {
   const [isResetting, setIsResetting] = useState(false);
   const [showAddTaskForm, setShowAddTaskForm] = useState(false);
   const [editingTask, setEditingTask] = useState(null);
-  const [streak, setStreak] = useState(() => {
-    const saved = localStorage.getItem('taskStreak');
-    const initialValue = JSON.parse(saved);
-    return initialValue || { count: 0, lastCompleted: null };
-  });
-  const [showAchievement, setShowAchievement] = useState(false);
-  const [achievementMessage, setAchievementMessage] = useState('');
   const [refreshTrigger, setRefreshTrigger] = useState(false);
   const [newTask, setNewTask] = useState({
     title: '',
@@ -61,21 +51,22 @@ const Dashboard = () => {
   const [customCategory, setCustomCategory] = useState('');
   const [activeCategory, setActiveCategory] = useState(null);
   
-  // Get unique categories from tasks dynamically
-  const getUniqueCategories = () => {
-    const categories = tasks.map(task => task.category || 'Other');
-    return [...new Set(categories)];
-  };
-  
-  const defaultCategories = getUniqueCategories().length > 0 ? 
-    getUniqueCategories() : 
-    ['Personal', 'Work', 'Health', 'Learning'];
+  // Available categories
+  const availableCategories = [
+    'Morning Routine',
+    'Health',
+    'Creative',
+    'Evening Routine',
+    'Work',
+    'Learning',
+    'Social'
+  ];
 
   // Group tasks by category
   const tasksByCategory = {};
   
   // Initialize all available categories
-  defaultCategories.forEach(category => {
+  availableCategories.forEach(category => {
     tasksByCategory[category] = [];
   });
   
@@ -101,9 +92,9 @@ const Dashboard = () => {
     let totalPoints = 0;
     let completedTasks = 0;
     let totalTasks = 0;
-    
-    Object.keys(tasksByCategory).forEach(category => {
-      tasksByCategory[category].forEach(task => {
+
+    Object.values(tasksByCategory).forEach(categoryTasks => {
+      categoryTasks.forEach(task => {
         totalTasks++;
         if (task.status === 'done') {
           completedTasks++;
@@ -111,22 +102,12 @@ const Dashboard = () => {
         }
       });
     });
-    
-    // Calculate user level based on XP
-    const level = Math.floor(Math.sqrt(user?.xp || 0) / 5) + 1;
-    const nextLevelXp = Math.pow((level) * 5, 2);
-    const currentLevelXp = Math.pow((level-1) * 5, 2);
-    const levelProgress = user?.xp ? ((user.xp - currentLevelXp) / (nextLevelXp - currentLevelXp)) * 100 : 0;
-    
+
     return {
       totalPoints,
       completedTasks,
       totalTasks,
-      progress: totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0,
-      level,
-      levelProgress: Math.round(levelProgress),
-      nextLevelXp,
-      streakCount: streak.count
+      progress: totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0
     };
   };
 
@@ -142,6 +123,14 @@ const Dashboard = () => {
     
     // Play a wee sound for feedback
     playSound(newStatus === 'done' ? 'complete' : 'click');
+    
+    // Create a local copy of the task with updated status
+    const updatedTask = { 
+      ...task,
+      status: newStatus,
+      justCompleted: newStatus === 'done' ? true : undefined,
+      updatedAt: Date.now()
+    };
     
     // Apply the update to the task in the UI immediately
     const taskElement = document.querySelector(`[data-task-id="${task._id}"]`);
@@ -167,41 +156,6 @@ const Dashboard = () => {
         
         // Remove XP element after animation
         setTimeout(() => xpElement.remove(), 1500);
-        
-        // Update streak
-        const today = new Date().toDateString();
-        const lastCompleted = streak.lastCompleted ? new Date(streak.lastCompleted).toDateString() : null;
-        
-        // Check if this is a new day compared to the last completion
-        if (lastCompleted !== today) {
-          const yesterday = new Date();
-          yesterday.setDate(yesterday.getDate() - 1);
-          const yesterdayString = yesterday.toDateString();
-          
-          // If the last completion was yesterday, increment streak
-          // Otherwise, reset streak to 1 (starting new streak)
-          const newStreak = lastCompleted === yesterdayString 
-            ? { count: streak.count + 1, lastCompleted: today }
-            : { count: 1, lastCompleted: today };
-          
-          setStreak(newStreak);
-          localStorage.setItem('taskStreak', JSON.stringify(newStreak));
-          
-          // Check for streak achievements
-          if (newStreak.count === 3) {
-            setAchievementMessage('Achievement Unlocked: 3 Day Streak! 🔥');
-            setShowAchievement(true);
-            setTimeout(() => setShowAchievement(false), 3000);
-          } else if (newStreak.count === 7) {
-            setAchievementMessage('Achievement Unlocked: Week Warrior! 🏆');
-            setShowAchievement(true);
-            setTimeout(() => setShowAchievement(false), 3000);
-          } else if (newStreak.count === 30) {
-            setAchievementMessage('Achievement Unlocked: Monthly Master! 👑');
-            setShowAchievement(true);
-            setTimeout(() => setShowAchievement(false), 3000);
-          }
-        }
       }
     }
     
@@ -218,9 +172,7 @@ const Dashboard = () => {
     
     // Send update to server with optimistic UI already applied
     updateTask(task._id, { 
-      status: newStatus,
-      justCompleted: newStatus === 'done' ? true : undefined,
-      updatedAt: Date.now()
+      status: newStatus
     })
       .then((response) => {
         // Update was successful
@@ -229,13 +181,6 @@ const Dashboard = () => {
         // Force another refresh to update stats with server data
         if (response && response.success) {
           setRefreshTrigger(prev => !prev);
-          
-          // If task was completed, make sure it disappears after animation
-          if (newStatus === 'done') {
-            setTimeout(() => {
-              setRefreshTrigger(prev => !prev);
-            }, 1500);
-          }
         }
       })
       .catch(error => {
@@ -499,9 +444,9 @@ const Dashboard = () => {
           </ResetDescription>
         </ResetButton>
         
-        {/* Friendly Tips */}
+        {/* ADHD-Friendly Tips */}
         <TipsContainer>
-          <TipsHeader>🧠 Friendly Tips</TipsHeader>
+          <TipsHeader>🧠 ADHD-Friendly Tips</TipsHeader>
           <TipsList>
             <Tip>• Start with the easiest tasks to build momentum</Tip>
             <Tip>• It's okay if you don't complete everything - progress over perfection!</Tip>
@@ -561,7 +506,7 @@ const Dashboard = () => {
                     setShowCustomCategory(e.target.value === 'custom');
                   }}
                 >
-                  {defaultCategories.map(category => (
+                  {availableCategories.map(category => (
                     <option key={category} value={category}>{category}</option>
                   ))}
                   <option value="custom">+ Add Custom Category</option>
@@ -615,7 +560,7 @@ const Dashboard = () => {
 
         {/* Task Categories */}
         {Object.entries(tasksByCategory)
-          .filter(([category, tasks]) => tasks.length > 0 || defaultCategories.includes(category))
+          .filter(([category, tasks]) => tasks.length > 0 || availableCategories.includes(category))
           .map(([category, categoryTasks]) => {
             const categoryStats = getCategoryStats(categoryTasks);
             
@@ -679,11 +624,32 @@ const Dashboard = () => {
                       </TaskItem>
                     );
                   })
+                        id={`task-checkbox-${task._id}`}
+                      />
+                      <TaskContent>
+                        <TaskTitle className={task.status === 'done' || task.justCompleted ? 'completed' : ''}>
+                          {task.title}
+                        </TaskTitle>
+                        <TaskDescription>{task.description}</TaskDescription>
+                      </TaskContent>
+                      <TaskActions>
+                        <TaskPoints>+{task.xpReward} pts</TaskPoints>
+                        <ActionButton onClick={() => startEditTask(task)}>
+                          <FaEdit />
+                        </ActionButton>
+                        <ActionButton onClick={() => handleDeleteTask(task._id)}>
+                          <FaTrash />
+                        </ActionButton>
+                      </TaskActions>
+                    </TaskItem>
+                  ))
                 )}
               </CategorySection>
             );
           })}
-      </DashboardContainer>
+
+
+    </DashboardContainer>
     </AppContainer>
   );
 };
@@ -693,17 +659,6 @@ const pulse = keyframes`
   0% { transform: scale(1); }
   50% { transform: scale(1.05); }
   100% { transform: scale(1); }
-`;
-
-const fadeIn = keyframes`
-  from { opacity: 0; }
-  to { opacity: 1; }
-`;
-
-const popIn = keyframes`
-  0% { transform: scale(0.5); opacity: 0; }
-  70% { transform: scale(1.1); opacity: 1; }
-  100% { transform: scale(1); opacity: 1; }
 `;
 
 const float = keyframes`
@@ -908,13 +863,9 @@ const StatBox = styled.div`
     border-color: rgba(46, 204, 113, 0.3); /* Tasks green color */
   }
   
-  &:nth-child(3) {
-    border-color: rgba(52, 152, 219, 0.3); /* Progress blue color */
-  }
-  
-  &:nth-child(4) {
+  &:last-child {
     margin-right: 0;
-    border-color: rgba(231, 76, 60, 0.3); /* Streak red color */
+    border-color: rgba(52, 152, 219, 0.3); /* Progress blue color */
   }
   
   &:hover {
@@ -930,7 +881,7 @@ const StatBox = styled.div`
     left: 0;
     right: 0;
     height: 4px;
-    background: linear-gradient(90deg, #f1c40f, #2ecc71, #3498db, #e74c3c);
+    background: linear-gradient(90deg, #f1c40f, #2ecc71, #3498db);
     opacity: 0.7;
   }
 `;

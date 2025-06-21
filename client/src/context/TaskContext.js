@@ -48,6 +48,8 @@ export const TaskProvider = ({ children }) => {
   useEffect(() => {
     if (user) {
       fetchTasks();
+    } else {
+      setTasks([]);
     }
   }, [user]);
 
@@ -100,8 +102,7 @@ export const TaskProvider = ({ children }) => {
       };
       
       setTasks([newTask, ...tasks]);
-      
-      return { task: newTask, success: true };
+      throw err;
     }
   };
 
@@ -133,65 +134,29 @@ export const TaskProvider = ({ children }) => {
       const updatedTasks = tasks.map(task => 
         task._id === id ? data.task : task
       );
-      
       setTasks(updatedTasks);
       
-      // Update user data if returned (e.g., if XP was awarded)
+      // Update user data if returned (e.g., XP gained)
       if (data.user) {
         updateUserData(data.user);
       }
       
       setLoading(false);
-      return { ...data, success: true };
+      return data;
     } catch (err) {
       setLoading(false);
       console.error('Error updating task:', err.message);
       
       // Fallback to local update if server fails
-      const taskIndex = tasks.findIndex(task => task._id === id);
-      if (taskIndex === -1) {
-        return { success: false, error: 'Task not found' };
-      }
-      
-      const oldTask = tasks[taskIndex];
-      const wasCompleted = oldTask.status !== 'done' && taskData.status === 'done';
-      const wasUncompleted = oldTask.status === 'done' && taskData.status === 'open';
-      
-      const updatedTask = {
-        ...oldTask,
-        ...taskData,
-        completedAt: wasCompleted ? new Date().toISOString() : (wasUncompleted ? null : oldTask.completedAt)
-      };
-      
-      // Create a completely new array to ensure React detects the state change
-      const updatedTasks = tasks.map(task => 
-        task._id === id ? updatedTask : task
-      );
-      
-      // Update the state with the new tasks array
-      setTasks(updatedTasks);
-      
-      let updatedUser = { ...user };
-      
-      // If task was completed, award XP
-      if (wasCompleted) {
-        updatedUser.xp += updatedTask.completionXp || 30;
-        
-        // Check if user should level up
-        if (updatedUser.xp >= updatedUser.xpToNextLevel) {
-          updatedUser.level += 1;
-          updatedUser.xp = updatedUser.xp - updatedUser.xpToNextLevel;
-          updatedUser.xpToNextLevel = 100 + (updatedUser.level * 20);
+      const updatedTasks = tasks.map(task => {
+        if (task._id === id) {
+          return { ...task, ...taskData };
         }
-        
-        updateUserData(updatedUser);
-      }
+        return task;
+      });
       
-      return {
-        success: true,
-        task: updatedTask,
-        user: wasCompleted ? updatedUser : null
-      };
+      setTasks(updatedTasks);
+      throw err;
     }
   };
 
@@ -217,9 +182,8 @@ export const TaskProvider = ({ children }) => {
         throw new Error(data.message || 'Failed to delete task');
       }
       
-      // Remove task from tasks list
-      const updatedTasks = tasks.filter(task => task._id !== id);
-      setTasks(updatedTasks);
+      // Remove task from list
+      setTasks(tasks.filter(task => task._id !== id));
       
       setLoading(false);
       return { success: true };
@@ -228,10 +192,8 @@ export const TaskProvider = ({ children }) => {
       console.error('Error deleting task:', err.message);
       
       // Fallback to local deletion if server fails
-      const updatedTasks = tasks.filter(task => task._id !== id);
-      setTasks(updatedTasks);
-      
-      return { success: true };
+      setTasks(tasks.filter(task => task._id !== id));
+      throw err;
     }
   };
 
