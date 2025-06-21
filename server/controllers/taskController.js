@@ -1,25 +1,33 @@
-const Task = require('../models/taskModel');
-const User = require('../models/userModel');
+const { Task, User } = require('../models');
 
 // @desc    Create a new task
 // @route   POST /api/tasks
 // @access  Private
 exports.createTask = async (req, res) => {
   try {
-    const { title, description, dueDate, priority } = req.body;
+    const { title, description, category, priority, xpReward = 10 } = req.body;
     
     // Create new task
     const task = await Task.create({
       title,
       description,
-      dueDate,
+      category,
       priority,
-      user: req.user._id
+      xpReward,
+      userId: req.user.id
     });
     
     // Award XP to user for creating a task
-    const user = await User.findById(req.user._id);
-    user.gainXp(task.xpReward);
+    const user = await User.findByPk(req.user.id);
+    // Add XP to user
+    user.xp += task.xpReward;
+    
+    // Check if user leveled up
+    if (user.xp >= user.xpToNextLevel) {
+      user.level += 1;
+      user.xpToNextLevel = Math.round(user.xpToNextLevel * 1.5);
+    }
+    
     await user.save();
     
     res.status(201).json({
@@ -40,7 +48,10 @@ exports.createTask = async (req, res) => {
 // @access  Private
 exports.getTasks = async (req, res) => {
   try {
-    const tasks = await Task.find({ user: req.user._id }).sort({ createdAt: -1 });
+    const tasks = await Task.findAll({
+      where: { userId: req.user.id },
+      order: [['createdAt', 'DESC']]
+    });
     res.json(tasks);
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -52,7 +63,7 @@ exports.getTasks = async (req, res) => {
 // @access  Private
 exports.getTaskById = async (req, res) => {
   try {
-    const task = await Task.findById(req.params.id);
+    const task = await Task.findByPk(req.params.id);
     
     // Check if task exists
     if (!task) {
@@ -60,7 +71,7 @@ exports.getTaskById = async (req, res) => {
     }
     
     // Check if user owns the task
-    if (task.user.toString() !== req.user._id.toString()) {
+    if (task.userId !== req.user.id) {
       return res.status(401).json({ message: 'Not authorized' });
     }
     
@@ -75,9 +86,9 @@ exports.getTaskById = async (req, res) => {
 // @access  Private
 exports.updateTask = async (req, res) => {
   try {
-    const { title, description, status, dueDate, priority } = req.body;
+    const { title, description, status, category, priority } = req.body;
     
-    const task = await Task.findById(req.params.id);
+    const task = await Task.findByPk(req.params.id);
     
     // Check if task exists
     if (!task) {
@@ -85,37 +96,44 @@ exports.updateTask = async (req, res) => {
     }
     
     // Check if user owns the task
-    if (task.user.toString() !== req.user._id.toString()) {
+    if (task.userId !== req.user.id) {
       return res.status(401).json({ message: 'Not authorized' });
     }
     
-    // Check if task is being marked as done
-    const wasCompleted = task.status !== 'done' && status === 'done';
+    // Check if task is being marked as completed
+    const wasCompleted = task.status !== 'completed' && status === 'completed';
     
     // Update task fields
-    task.title = title || task.title;
-    task.description = description || task.description;
-    task.status = status || task.status;
-    task.dueDate = dueDate || task.dueDate;
-    task.priority = priority || task.priority;
+    if (title) task.title = title;
+    if (description) task.description = description;
+    if (status) task.status = status;
+    if (category) task.category = category;
+    if (priority) task.priority = priority;
     
-    // If task is being marked as done, set completedAt
+    // If task is being marked as completed, set completionXp
     if (wasCompleted) {
-      task.completedAt = Date.now();
+      task.completionXp = task.xpReward * 2; // Double XP for completion
     }
     
-    const updatedTask = await task.save();
+    await task.save();
     
-    // If task was marked as done, award XP
+    // If task was marked as completed, award XP
     let user = null;
     if (wasCompleted) {
-      user = await User.findById(req.user._id);
-      user.gainXp(task.completionXp);
+      user = await User.findByPk(req.user.id);
+      user.xp += task.completionXp;
+      
+      // Check if user leveled up
+      if (user.xp >= user.xpToNextLevel) {
+        user.level += 1;
+        user.xpToNextLevel = Math.round(user.xpToNextLevel * 1.5);
+      }
+      
       await user.save();
     }
     
     res.json({
-      task: updatedTask,
+      task,
       user: wasCompleted ? {
         level: user.level,
         xp: user.xp,
@@ -132,7 +150,7 @@ exports.updateTask = async (req, res) => {
 // @access  Private
 exports.deleteTask = async (req, res) => {
   try {
-    const task = await Task.findById(req.params.id);
+    const task = await Task.findByPk(req.params.id);
     
     // Check if task exists
     if (!task) {
@@ -140,11 +158,11 @@ exports.deleteTask = async (req, res) => {
     }
     
     // Check if user owns the task
-    if (task.user.toString() !== req.user._id.toString()) {
+    if (task.userId !== req.user.id) {
       return res.status(401).json({ message: 'Not authorized' });
     }
     
-    await task.deleteOne();
+    await task.destroy();
     res.json({ message: 'Task removed' });
   } catch (error) {
     res.status(500).json({ message: error.message });

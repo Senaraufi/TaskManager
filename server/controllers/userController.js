@@ -1,4 +1,6 @@
-const User = require('../models/userModel');
+const { User } = require('../models');
+const { sequelize } = require('../config/database');
+const { Op } = require('sequelize');
 const jwt = require('jsonwebtoken');
 
 // Generate JWT token
@@ -16,7 +18,12 @@ exports.registerUser = async (req, res) => {
     const { username, email, password } = req.body;
 
     // Check if user already exists
-    const userExists = await User.findOne({ $or: [{ email }, { username }] });
+    const userExists = await User.findOne({ 
+      where: {
+        [sequelize.Op.or]: [{ email }, { username }]
+      }
+    });
+    
     if (userExists) {
       return res.status(400).json({ message: 'User already exists' });
     }
@@ -30,13 +37,13 @@ exports.registerUser = async (req, res) => {
 
     if (user) {
       res.status(201).json({
-        _id: user._id,
+        id: user.id,
         username: user.username,
         email: user.email,
         level: user.level,
         xp: user.xp,
         xpToNextLevel: user.xpToNextLevel,
-        token: generateToken(user._id)
+        token: generateToken(user.id)
       });
     } else {
       res.status(400).json({ message: 'Invalid user data' });
@@ -54,18 +61,18 @@ exports.loginUser = async (req, res) => {
     const { email, password } = req.body;
 
     // Find user by email
-    const user = await User.findOne({ email }).select('+password');
+    const user = await User.findOne({ where: { email } });
     
     // Check if user exists and password matches
     if (user && (await user.matchPassword(password))) {
       res.json({
-        _id: user._id,
+        id: user.id,
         username: user.username,
         email: user.email,
         level: user.level,
         xp: user.xp,
         xpToNextLevel: user.xpToNextLevel,
-        token: generateToken(user._id)
+        token: generateToken(user.id)
       });
     } else {
       res.status(401).json({ message: 'Invalid email or password' });
@@ -80,11 +87,11 @@ exports.loginUser = async (req, res) => {
 // @access  Private
 exports.getUserProfile = async (req, res) => {
   try {
-    const user = await User.findById(req.user._id);
+    const user = await User.findByPk(req.user.id);
     
     if (user) {
       res.json({
-        _id: user._id,
+        id: user.id,
         username: user.username,
         email: user.email,
         level: user.level,
@@ -104,10 +111,14 @@ exports.getUserProfile = async (req, res) => {
 // @access  Public
 exports.getLeaderboard = async (req, res) => {
   try {
-    const users = await User.find({})
-      .select('username level xp')
-      .sort({ level: -1, xp: -1 })
-      .limit(10);
+    const users = await User.findAll({
+      attributes: ['username', 'level', 'xp'],
+      order: [
+        ['level', 'DESC'],
+        ['xp', 'DESC']
+      ],
+      limit: 10
+    });
     
     res.json(users);
   } catch (error) {

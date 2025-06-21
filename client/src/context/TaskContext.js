@@ -2,7 +2,7 @@ import { createContext, useState, useContext, useEffect } from 'react';
 import AuthContext from './AuthContext';
 
 // API URL
-const API_URL = 'http://localhost:5000/api';
+const API_URL = 'http://localhost:5002/api';
 
 const TaskContext = createContext();
 
@@ -47,18 +47,41 @@ export const TaskProvider = ({ children }) => {
   const [error, setError] = useState(null);
   const { user, updateUserData } = useContext(AuthContext);
 
+  // Fetch tasks from API
+  const fetchTasks = async () => {
+    if (!user || !user.token) return;
+    
+    setLoading(true);
+    
+    try {
+      const response = await fetch(`${API_URL}/tasks`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${user.token}`
+        }
+      });
+      
+      const data = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to fetch tasks');
+      }
+      
+      setTasks(data);
+      setLoading(false);
+    } catch (err) {
+      console.error('Error fetching tasks:', err.message);
+      // Fall back to mock tasks
+      setTasks(mockTasks);
+      setLoading(false);
+    }
+  };
+
   // Load tasks when user changes
   useEffect(() => {
     if (user) {
-      // Simulate API call
-      setLoading(true);
-      setTimeout(() => {
-        setTasks(mockTasks);
-        setLoading(false);
-      }, 500);
-    };
-    
-    fetchTasks();
+      fetchTasks();
+    }
   }, [user]);
 
   // Create a new task
