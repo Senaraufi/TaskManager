@@ -57,7 +57,7 @@ const Dashboard = () => {
   tasks.forEach(task => {
     const category = task.category || 'Morning Routine';
     // Only show tasks that are not done or are in the process of being completed (for animation)
-    if (task.status !== 'done' || (task.justCompleted && Date.now() - (task.updatedAt || Date.now()) < 1000)) {
+    if (task.status !== 'done' || task.justCompleted) {
       tasksByCategory[category].push(task);
     }
   });
@@ -96,53 +96,54 @@ const Dashboard = () => {
     
     setLoading(true);
     
-    // Immediately update local state for instant feedback
+    // Create a local copy of the task with updated status
+    const updatedTask = { 
+      ...task,
+      status: newStatus,
+      justCompleted: newStatus === 'done' ? true : undefined,
+      updatedAt: Date.now()
+    };
+    
+    // Apply the update to the task in the UI immediately
+    // This is done by modifying the task directly in the DOM
+    const taskElement = document.querySelector(`[data-task-id="${task._id}"]`);
+    if (taskElement) {
+      if (newStatus === 'done') {
+        taskElement.classList.add('completed');
+        const checkbox = taskElement.querySelector('input[type="checkbox"]');
+        if (checkbox) checkbox.checked = true;
+      }
+    }
+    
+    // Force immediate UI update for visual feedback
+    setRefreshTrigger(prev => !prev);
+    
+    // Set a timeout to hide completed tasks after animation
     if (newStatus === 'done') {
-      // For completed tasks, mark them with animation class
-      const updatedTasksWithAnimation = tasks.map(t => 
-        t._id === task._id ? { 
-          ...t, 
-          status: newStatus,
-          justCompleted: true
-        } : t
-      );
-      
-      // Update local state immediately to show animation
-      const updatedStats = calculateStats();
-      
-      // Force immediate UI update
-      setRefreshTrigger(prev => !prev);
-      
-      // Set a timeout to remove completed tasks from view after animation
       setTimeout(() => {
         // This will trigger a re-render without the completed task
         setRefreshTrigger(prev => !prev);
       }, 800); // Shorter delay for better UX
-    } else {
-      // For reopened tasks, update immediately
-      const updatedTasks = tasks.map(t => 
-        t._id === task._id ? { ...t, status: newStatus } : t
-      );
-      setRefreshTrigger(prev => !prev);
     }
     
-    // Send update to server
-    updateTask(task._id, { status: newStatus })
-      .then(() => {
+    // Send update to server with optimistic UI already applied
+    updateTask(task._id, { 
+      status: newStatus
+    })
+      .then((response) => {
         // Update was successful
         setLoading(false);
         
         // Force another refresh to update stats with server data
-        setRefreshTrigger(prev => !prev);
+        if (response && response.success) {
+          setRefreshTrigger(prev => !prev);
+        }
       })
       .catch(error => {
         console.error('Error updating task:', error);
         setLoading(false);
         
-        // Revert the task status in case of error
-        const revertedTasks = tasks.map(t => 
-          t._id === task._id ? { ...t, status: task.status } : t
-        );
+        // Revert the UI changes by forcing a refresh
         setRefreshTrigger(prev => !prev);
         
         // Alert user of error
@@ -881,6 +882,7 @@ const TaskItem = styled.div`
   color: #ecf0f1;
   box-shadow: 0 2px 4px rgba(0,0,0,0.1);
   transition: all 0.3s ease-in-out;
+  overflow: hidden;
   
   &:hover {
     box-shadow: 0 4px 8px rgba(0,0,0,0.2);
@@ -888,9 +890,8 @@ const TaskItem = styled.div`
   }
   
   &.completed {
-    animation: slideOut 1s forwards;
-    opacity: 0.7;
-    background-color: #2c3e50;
+    animation: slideOut 0.8s forwards;
+    background-color: #27ae60;
   }
   
   @keyframes slideOut {
@@ -898,12 +899,12 @@ const TaskItem = styled.div`
       transform: translateX(0);
       opacity: 1;
     }
-    70% {
-      opacity: 0.7;
+    30% {
+      background-color: #27ae60;
       transform: translateX(5%);
     }
     100% {
-      transform: translateX(100%);
+      transform: translateX(120%);
       opacity: 0;
       height: 0;
       margin: 0;
