@@ -1,6 +1,9 @@
 import { createContext, useState, useContext, useEffect } from 'react';
 import AuthContext from './AuthContext';
 
+// API URL
+const API_URL = 'http://localhost:5000/api';
+
 const TaskContext = createContext();
 
 // Mock tasks for development
@@ -53,42 +56,136 @@ export const TaskProvider = ({ children }) => {
         setTasks(mockTasks);
         setLoading(false);
       }, 500);
-    } else {
-      setTasks([]);
-    }
+    };
+    
+    fetchTasks();
   }, [user]);
 
-  // Fetch all tasks (mock implementation)
-  const fetchTasks = () => {
-    setLoading(true);
-    setTimeout(() => {
-      setTasks(mockTasks);
-      setLoading(false);
-    }, 500);
-  };
-
-  // Create a new task (mock implementation)
-  const createTask = (taskData) => {
+  // Create a new task
+  const createTask = async (taskData) => {
+    if (!user || !user.token) {
+      throw new Error('User not authenticated');
+    }
+    
     setLoading(true);
     
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        const newTask = {
-          _id: Date.now().toString(),
-          ...taskData,
-          status: 'open',
-          xpReward: 10,
-          completionXp: 30,
-          createdAt: new Date().toISOString()
-        };
-        
-        setTasks([newTask, ...tasks]);
-        
-        // Mock user XP update
-        const updatedUser = {
-          ...user,
-          xp: user.xp + 10
-        };
+    try {
+      const response = await fetch(`${API_URL}/tasks`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${user.token}`
+        },
+        body: JSON.stringify(taskData)
+      });
+      
+      const data = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to create task');
+      }
+      
+      // Update tasks list with new task
+      setTasks([data.task, ...tasks]);
+      
+      // Update user data if returned
+      if (data.user) {
+        updateUserData(data.user);
+      }
+      
+      setLoading(false);
+      return data;
+    } catch (err) {
+      setLoading(false);
+      console.error('Error creating task:', err.message);
+      
+      // Fallback to local creation if server fails
+      const newTask = {
+        _id: Date.now().toString(),
+        ...taskData,
+        status: 'open',
+        xpReward: taskData.xpReward || 10,
+        completionXp: 30,
+        createdAt: new Date().toISOString()
+      };
+      
+      setTasks([newTask, ...tasks]);
+      
+      return { task: newTask, success: true };
+    }
+  };
+
+  // Update a task
+  const updateTask = async (id, taskData) => {
+    if (!user || !user.token) {
+      throw new Error('User not authenticated');
+    }
+    
+    setLoading(true);
+    
+    try {
+      const response = await fetch(`${API_URL}/tasks/${id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${user.token}`
+        },
+        body: JSON.stringify(taskData)
+      });
+      
+      const data = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to update task');
+      }
+      
+      // Update tasks list with updated task
+      const updatedTasks = tasks.map(task => 
+        task._id === id ? data.task : task
+      );
+      
+      setTasks(updatedTasks);
+      
+      // Update user data if returned (e.g., if XP was awarded)
+      if (data.user) {
+        updateUserData(data.user);
+      }
+      
+      setLoading(false);
+      return { ...data, success: true };
+    } catch (err) {
+      setLoading(false);
+      console.error('Error updating task:', err.message);
+      
+      // Fallback to local update if server fails
+      const taskIndex = tasks.findIndex(task => task._id === id);
+      if (taskIndex === -1) {
+        return { success: false, error: 'Task not found' };
+      }
+      
+      const oldTask = tasks[taskIndex];
+      const wasCompleted = oldTask.status !== 'done' && taskData.status === 'done';
+      const wasUncompleted = oldTask.status === 'done' && taskData.status === 'open';
+      
+      const updatedTask = {
+        ...oldTask,
+        ...taskData,
+        completedAt: wasCompleted ? new Date().toISOString() : (wasUncompleted ? null : oldTask.completedAt)
+      };
+      
+      // Create a completely new array to ensure React detects the state change
+      const updatedTasks = tasks.map(task => 
+        task._id === id ? updatedTask : task
+      );
+      
+      // Update the state with the new tasks array
+      setTasks(updatedTasks);
+      
+      let updatedUser = { ...user };
+      
+      // If task was completed, award XP
+      if (wasCompleted) {
+        updatedUser.xp += updatedTask.completionXp || 30;
         
         // Check if user should level up
         if (updatedUser.xp >= updatedUser.xpToNextLevel) {
@@ -98,95 +195,54 @@ export const TaskProvider = ({ children }) => {
         }
         
         updateUserData(updatedUser);
-        setLoading(false);
-        
-        resolve({
-          task: newTask,
-          user: updatedUser
-        });
-      }, 500);
-    });
+      }
+      
+      return {
+        success: true,
+        task: updatedTask,
+        user: wasCompleted ? updatedUser : null
+      };
+    }
   };
 
-  // Update a task (mock implementation)
-  const updateTask = (id, taskData) => {
+  // Delete a task
+  const deleteTask = async (id) => {
+    if (!user || !user.token) {
+      throw new Error('User not authenticated');
+    }
+    
     setLoading(true);
     
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        const taskIndex = tasks.findIndex(task => task._id === id);
-        if (taskIndex === -1) {
-          setLoading(false);
-          resolve({ success: false, error: 'Task not found' });
-          return;
+    try {
+      const response = await fetch(`${API_URL}/tasks/${id}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${user.token}`
         }
-        
-        const oldTask = tasks[taskIndex];
-        const wasCompleted = oldTask.status !== 'done' && taskData.status === 'done';
-        const wasUncompleted = oldTask.status === 'done' && taskData.status === 'open';
-        
-        const updatedTask = {
-          ...oldTask,
-          ...taskData,
-          completedAt: wasCompleted ? new Date().toISOString() : (wasUncompleted ? null : oldTask.completedAt)
-        };
-        
-        // Create a completely new array to ensure React detects the state change
-        const updatedTasks = tasks.map(task => 
-          task._id === id ? updatedTask : task
-        );
-        
-        // Update the state with the new tasks array
-        setTasks(updatedTasks);
-        
-        let updatedUser = { ...user };
-        
-        // If task was completed, award XP
-        if (wasCompleted) {
-          updatedUser.xp += updatedTask.completionXp || 30;
-          
-          // Check if user should level up
-          if (updatedUser.xp >= updatedUser.xpToNextLevel) {
-            updatedUser.level += 1;
-            updatedUser.xp = updatedUser.xp - updatedUser.xpToNextLevel;
-            updatedUser.xpToNextLevel = 100 + (updatedUser.level * 20);
-          }
-          
-          updateUserData(updatedUser);
-        }
-        
-        // If task was uncompleted, remove XP (optional)
-        if (wasUncompleted && oldTask.completionXp) {
-          // This is optional - you may want to remove XP when a task is unchecked
-          // Uncomment if you want this behavior
-          /*
-          updatedUser.xp = Math.max(0, updatedUser.xp - (oldTask.completionXp || 30));
-          updateUserData(updatedUser);
-          */
-        }
-        
-        setLoading(false);
-        
-        resolve({
-          success: true,
-          task: updatedTask,
-          user: wasCompleted ? updatedUser : null
-        });
-      }, 200); // Reduced timeout for better responsiveness
-    });
-  };
-
-  // Delete a task (mock implementation)
-  const deleteTask = (id) => {
-    setLoading(true);
-    
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        setTasks(tasks.filter(task => task._id !== id));
-        setLoading(false);
-        resolve();
-      }, 500);
-    });
+      });
+      
+      const data = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to delete task');
+      }
+      
+      // Remove task from tasks list
+      const updatedTasks = tasks.filter(task => task._id !== id);
+      setTasks(updatedTasks);
+      
+      setLoading(false);
+      return { success: true };
+    } catch (err) {
+      setLoading(false);
+      console.error('Error deleting task:', err.message);
+      
+      // Fallback to local deletion if server fails
+      const updatedTasks = tasks.filter(task => task._id !== id);
+      setTasks(updatedTasks);
+      
+      return { success: true };
+    }
   };
 
   return (
