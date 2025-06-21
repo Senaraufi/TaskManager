@@ -6,7 +6,7 @@ import App from './App';
 import reportWebVitals from './reportWebVitals';
 
 // Set default axios base URL for API requests
-axios.defaults.baseURL = 'http://localhost:5000';
+axios.defaults.baseURL = 'http://localhost:5002';
 
 // Add request interceptor for handling errors globally
 axios.interceptors.response.use(

@@ -16,40 +16,58 @@ const PORT = process.env.PORT || 5002;
 app.use(cors());
 app.use(express.json());
 
-// Routes
-app.use('/api/users', userRoutes);
-app.use('/api/tasks', taskRoutes);
-
-// Root route
-app.get('/', (req, res) => {
-  res.send('Gamified Task Manager API is running');
-});
-
-// Start the server
-const startServer = () => {
-  app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-  });
-};
+// Set up mock routes first (these will be overridden by real routes if DB connection succeeds)
 
 // Mock authentication middleware for development when database connection fails
 app.use((req, res, next) => {
-  if (req.path.startsWith('/api/') && req.path !== '/api/users/login' && req.path !== '/api/users/register' && !req.headers.authorization) {
-    // Attach mock user to request for development purposes
-    req.user = {
-      id: 123456789,
-      username: 'TestUser',
-      email: 'test@example.com',
-      level: 5,
-      xp: 75,
-      xpToNextLevel: 200
-    };
+  if (req.path.startsWith('/api/') && req.path !== '/api/users/login' && req.path !== '/api/users/register') {
+    // Check for authorization header
+    const authHeader = req.headers.authorization;
+    
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.split(' ')[1];
+      
+      // Check if it's an admin token
+      if (token.includes('admin-token')) {
+        req.user = {
+          id: 999999,
+          username: 'admin',
+          email: 'admin@taskmanager.com',
+          isAdmin: true,
+          level: 10,
+          xp: 500,
+          xpToNextLevel: 1000
+        };
+      } else {
+        // Regular user token
+        req.user = {
+          id: 123456789,
+          username: 'TestUser',
+          email: 'test@example.com',
+          isAdmin: false,
+          level: 5,
+          xp: 75,
+          xpToNextLevel: 200
+        };
+      }
+    } else {
+      // No auth header, use default test user
+      req.user = {
+        id: 123456789,
+        username: 'TestUser',
+        email: 'test@example.com',
+        isAdmin: false,
+        level: 5,
+        xp: 75,
+        xpToNextLevel: 200
+      };
+    }
   }
   next();
 });
 
 // Mock routes for development when database connection fails
-app.post('/api/users/register', (req, res, next) => {
+app.post('/api/users/register', (req, res) => {
   // If the route handler in userRoutes.js doesn't handle this, provide mock data
   const { username, email } = req.body;
   res.json({
@@ -63,13 +81,30 @@ app.post('/api/users/register', (req, res, next) => {
   });
 });
 
-app.post('/api/users/login', (req, res, next) => {
+app.post('/api/users/login', (req, res) => {
   // If the route handler in userRoutes.js doesn't handle this, provide mock data
-  const { email } = req.body;
+  const { email, password } = req.body;
+  
+  // Check for admin credentials
+  if (email === 'admin@taskmanager.com' && password === 'admin123') {
+    return res.json({
+      id: 999999,
+      username: 'admin',
+      email: 'admin@taskmanager.com',
+      isAdmin: true,
+      level: 10,
+      xp: 500,
+      xpToNextLevel: 1000,
+      token: 'admin-token-' + Date.now()
+    });
+  }
+  
+  // Regular user login
   res.json({
     id: 123456789,
     username: email.split('@')[0],
     email,
+    isAdmin: false,
     level: 5,
     xp: 75,
     xpToNextLevel: 200,
@@ -77,7 +112,7 @@ app.post('/api/users/login', (req, res, next) => {
   });
 });
 
-app.get('/api/tasks', (req, res, next) => {
+app.get('/api/tasks', (req, res) => {
   // If the route handler in taskRoutes.js doesn't handle this, provide mock data
   res.json([
     {
@@ -117,6 +152,27 @@ app.get('/api/tasks', (req, res, next) => {
       userId: 123456789
     }
   ]);
+});
+
+// Real routes (these will override mock routes if database connection succeeds)
+app.use('/api/users', userRoutes);
+app.use('/api/tasks', taskRoutes);
+
+// Root route
+app.get('/', (req, res) => {
+  res.send('Gamified Task Manager API is running');
+});
+
+// Start the server
+const startServer = () => {
+  app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+  });
+};
+
+// Root route
+app.get('/', (req, res) => {
+  res.send('Gamified Task Manager API is running');
 });
 
 // Initialize database and start server
