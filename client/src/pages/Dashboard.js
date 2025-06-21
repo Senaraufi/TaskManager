@@ -2,27 +2,47 @@ import React, { useContext, useState, useEffect } from 'react';
 import styled from 'styled-components';
 import TaskContext from '../context/TaskContext';
 import AuthContext from '../context/AuthContext';
-import { FaStar } from 'react-icons/fa';
+import { FaStar, FaPlus, FaTrash, FaEdit, FaTimes } from 'react-icons/fa';
 
 const Dashboard = () => {
-  const { tasks, loading, updateTask } = useContext(TaskContext);
+  const { tasks, loading, updateTask, createTask, deleteTask } = useContext(TaskContext);
   const { user } = useContext(AuthContext);
+  
+  // Available categories
+  const availableCategories = [
+    'Morning Routine',
+    'Health',
+    'Creative',
+    'Evening Routine',
+    'Work',
+    'Learning',
+    'Social'
+  ];
+  
+  // State for custom category
+  const [showCustomCategory, setShowCustomCategory] = useState(false);
+  const [customCategory, setCustomCategory] = useState('');
 
   // Group tasks by category
-  const tasksByCategory = {
-    'Morning Routine': [],
-    'Health': [],
-    'Creative': [],
-    'Evening Routine': []
-  };
-
+  const tasksByCategory = {};
+  
+  // Initialize all available categories
+  availableCategories.forEach(category => {
+    tasksByCategory[category] = [];
+  });
+  
+  // Add any custom categories from existing tasks
   tasks.forEach(task => {
     const category = task.category || 'Morning Routine';
-    if (tasksByCategory[category]) {
-      tasksByCategory[category].push(task);
-    } else {
-      tasksByCategory['Morning Routine'].push(task);
+    if (!tasksByCategory[category]) {
+      tasksByCategory[category] = [];
     }
+  });
+
+  // Sort tasks into categories
+  tasks.forEach(task => {
+    const category = task.category || 'Morning Routine';
+    tasksByCategory[category].push(task);
   });
 
   // Calculate points and completion stats
@@ -54,16 +74,173 @@ const Dashboard = () => {
   // Handle task completion toggle
   const handleTaskToggle = (task) => {
     const newStatus = task.status === 'done' ? 'open' : 'done';
-    updateTask(task._id, { status: newStatus });
+    // Prevent double-clicking by checking if loading
+    if (loading) return;
+    
+    updateTask(task._id, { status: newStatus })
+      .then((response) => {
+        if (response.success) {
+          // Task updated successfully
+          console.log(`Task ${task.title} marked as ${newStatus}`);
+        } else {
+          console.error('Failed to update task status');
+        }
+      })
+      .catch(error => {
+        console.error('Error toggling task status:', error);
+      });
+  };
+  
+  // Handle adding a new task
+  const handleAddTask = (e) => {
+    e.preventDefault();
+    
+    // Validate the form
+    if (!newTask.title.trim()) {
+      alert('Please enter a task title');
+      return;
+    }
+    
+    setIsSubmitting(true);
+    
+    // Handle custom category if selected
+    let finalCategory = newTask.category;
+    if (newTask.category === 'custom' && customCategory.trim()) {
+      finalCategory = customCategory.trim();
+    }
+    
+    // Create a complete task object
+    const taskToCreate = {
+      ...newTask,
+      title: newTask.title.trim(),
+      description: newTask.description.trim(),
+      category: finalCategory,
+      priority: newTask.priority || 'medium',
+      xpReward: parseInt(newTask.xpReward) || 10
+    };
+    
+    createTask(taskToCreate)
+      .then(() => {
+        // Reset form and hide it
+        setNewTask({
+          title: '',
+          description: '',
+          category: activeCategory || 'Morning Routine',
+          priority: 'medium',
+          xpReward: 10
+        });
+        setCustomCategory('');
+        setShowCustomCategory(false);
+        setShowAddTaskForm(false);
+        setIsSubmitting(false);
+      })
+      .catch(error => {
+        console.error('Error adding task:', error);
+        setIsSubmitting(false);
+      });
+  };
+  
+  // Handle editing a task
+  const handleEditTask = (e) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+    
+    updateTask(editingTask._id, newTask)
+      .then(() => {
+        // Reset form and hide it
+        setNewTask({
+          title: '',
+          description: '',
+          category: 'Morning Routine',
+          priority: 'medium'
+        });
+        setEditingTask(null);
+        setIsSubmitting(false);
+      })
+      .catch(error => {
+        console.error('Error updating task:', error);
+        setIsSubmitting(false);
+      });
+  };
+  
+  // Handle deleting a task
+  const handleDeleteTask = (taskId) => {
+    if (window.confirm('Are you sure you want to delete this task?')) {
+      deleteTask(taskId)
+        .then(() => {
+          // Task deleted successfully
+        })
+        .catch(error => {
+          console.error('Error deleting task:', error);
+        });
+    }
+  };
+  
+  // Set up edit mode
+  const startEditTask = (task) => {
+    setEditingTask(task);
+    setNewTask({
+      title: task.title,
+      description: task.description,
+      category: task.category || 'Morning Routine',
+      priority: task.priority || 'medium'
+    });
+  };
+  
+  // Cancel add/edit mode
+  const cancelAddEdit = () => {
+    setShowAddTaskForm(false);
+    setEditingTask(null);
+    setNewTask({
+      title: '',
+      description: '',
+      category: activeCategory || 'Morning Routine',
+      priority: 'medium',
+      xpReward: 10
+    });
+    setCustomCategory('');
+    setShowCustomCategory(false);
+  };
+  
+  // Handle category selection for adding tasks
+  const handleAddTaskToCategory = (category) => {
+    setActiveCategory(category);
+    setNewTask(prev => ({ ...prev, category }));
+    setShowAddTaskForm(true);
   };
 
+  // State variables
+  const [isResetting, setIsResetting] = useState(false);
+  const [showAddTaskForm, setShowAddTaskForm] = useState(false);
+  const [editingTask, setEditingTask] = useState(null);
+  const [newTask, setNewTask] = useState({
+    title: '',
+    description: '',
+    category: 'Morning Routine',
+    priority: 'medium',
+    xpReward: 10
+  });
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [activeCategory, setActiveCategory] = useState(null);
+  
   // Reset all tasks to open status
   const resetTasks = () => {
-    tasks.forEach(task => {
-      if (task.status === 'done') {
-        updateTask(task._id, { status: 'open' });
-      }
-    });
+    setIsResetting(true);
+    
+    // Create a promise for each task update
+    const updatePromises = tasks
+      .filter(task => task.status === 'done')
+      .map(task => updateTask(task._id, { status: 'open' }));
+    
+    // When all updates are complete, set resetting to false
+    Promise.all(updatePromises)
+      .then(() => {
+        setIsResetting(false);
+      })
+      .catch(error => {
+        console.error('Error resetting tasks:', error);
+        setIsResetting(false);
+      });
   };
 
   // Calculate category stats
@@ -110,9 +287,16 @@ const Dashboard = () => {
           <ProgressBar progress={stats.progress} />
         </ProgressBarContainer>
 
-        <ResetButton onClick={resetTasks}>
-          Reset Daily Tasks
-          <ResetDescription>Reset your checklist for a fresh start</ResetDescription>
+        <ResetButton 
+          onClick={resetTasks} 
+          disabled={isResetting || stats.completedTasks === 0}
+        >
+          {isResetting ? 'Resetting...' : 'Reset Daily Tasks'}
+          <ResetDescription>
+            {stats.completedTasks === 0 
+              ? 'No completed tasks to reset' 
+              : 'Reset your checklist for a fresh start'}
+          </ResetDescription>
         </ResetButton>
         
         {/* ADHD-Friendly Tips */}
@@ -129,38 +313,168 @@ const Dashboard = () => {
       </FixedTrackerSection>
       
       <DashboardContainer>
-
-      {/* Task Categories */}
-      {Object.entries(tasksByCategory).map(([category, categoryTasks]) => {
-        const categoryStats = getCategoryStats(categoryTasks);
+        {/* Add Task Button */}
+        {!showAddTaskForm && !editingTask && (
+          <AddTaskButton onClick={() => setShowAddTaskForm(true)}>
+            <FaPlus /> Add New Task
+          </AddTaskButton>
+        )}
         
-        return (
-          <CategorySection key={category}>
-            <CategoryHeader>
-              <h2>{category}</h2>
-              <CategoryStats>
-                {categoryStats.completed}/{categoryStats.total} tasks
-                <PointsTotal>{categoryStats.completed > 0 ? categoryStats.totalPoints : 0}/{categoryTasks.reduce((sum, task) => sum + (task.xpReward || 0), 0)} pts</PointsTotal>
-              </CategoryStats>
-            </CategoryHeader>
-            
-            {categoryTasks.map(task => (
-              <TaskItem key={task._id}>
-                <Checkbox 
-                  type="checkbox" 
-                  checked={task.status === 'done'}
-                  onChange={() => handleTaskToggle(task)}
+        {/* Add/Edit Task Form */}
+        {(showAddTaskForm || editingTask) && (
+          <TaskFormContainer>
+            <TaskForm onSubmit={editingTask ? handleEditTask : handleAddTask}>
+              <TaskFormHeader>
+                <h3>{editingTask ? 'Edit Task' : 'Add New Task'}</h3>
+                <CloseButton onClick={cancelAddEdit}>
+                  <FaTimes />
+                </CloseButton>
+              </TaskFormHeader>
+              
+              <FormGroup>
+                <FormLabel>Title</FormLabel>
+                <FormInput 
+                  type="text" 
+                  value={newTask.title} 
+                  onChange={(e) => setNewTask({...newTask, title: e.target.value})}
+                  placeholder="Task title"
+                  required
                 />
-                <TaskContent>
-                  <TaskTitle>{task.title}</TaskTitle>
-                  <TaskDescription>{task.description}</TaskDescription>
-                </TaskContent>
-                <TaskPoints>+{task.xpReward} pts</TaskPoints>
-              </TaskItem>
-            ))}
-          </CategorySection>
-        );
-      })}
+              </FormGroup>
+              
+              <FormGroup>
+                <FormLabel>Description</FormLabel>
+                <FormTextarea 
+                  value={newTask.description} 
+                  onChange={(e) => setNewTask({...newTask, description: e.target.value})}
+                  placeholder="Task description"
+                  rows="3"
+                />
+              </FormGroup>
+              
+              <FormGroup>
+                <FormLabel>Category</FormLabel>
+                <FormSelect 
+                  value={newTask.category} 
+                  onChange={(e) => {
+                    setNewTask({...newTask, category: e.target.value});
+                    setShowCustomCategory(e.target.value === 'custom');
+                  }}
+                >
+                  {availableCategories.map(category => (
+                    <option key={category} value={category}>{category}</option>
+                  ))}
+                  <option value="custom">+ Add Custom Category</option>
+                </FormSelect>
+              </FormGroup>
+              
+              {showCustomCategory && (
+                <FormGroup>
+                  <FormLabel>Custom Category Name</FormLabel>
+                  <FormInput
+                    type="text"
+                    value={customCategory}
+                    onChange={(e) => setCustomCategory(e.target.value)}
+                    placeholder="Enter custom category name"
+                    required
+                  />
+                </FormGroup>
+              )}
+              
+              <FormGroup>
+                <FormLabel>Points (XP Reward)</FormLabel>
+                <FormSelect
+                  value={newTask.xpReward}
+                  onChange={(e) => setNewTask({...newTask, xpReward: e.target.value})}
+                >
+                  <option value="5">5 XP (Quick Task)</option>
+                  <option value="10">10 XP (Standard Task)</option>
+                  <option value="15">15 XP (Challenging Task)</option>
+                  <option value="20">20 XP (Difficult Task)</option>
+                </FormSelect>
+              </FormGroup>
+              
+              <FormGroup>
+                <FormLabel>Priority</FormLabel>
+                <FormSelect 
+                  value={newTask.priority} 
+                  onChange={(e) => setNewTask({...newTask, priority: e.target.value})}
+                >
+                  <option value="low">Low</option>
+                  <option value="medium">Medium</option>
+                  <option value="high">High</option>
+                </FormSelect>
+              </FormGroup>
+              
+              <FormButton type="submit" disabled={isSubmitting}>
+                {isSubmitting ? 'Saving...' : editingTask ? 'Update Task' : 'Add Task'}
+              </FormButton>
+            </TaskForm>
+          </TaskFormContainer>
+        )}
+
+        {/* Task Categories */}
+        {Object.entries(tasksByCategory)
+          .filter(([category, tasks]) => tasks.length > 0 || availableCategories.includes(category))
+          .map(([category, categoryTasks]) => {
+            const categoryStats = getCategoryStats(categoryTasks);
+            
+            return (
+              <CategorySection key={category}>
+                <CategoryHeader>
+                  <CategoryTitleArea>
+                    <h2>{category}</h2>
+                    <AddToCategoryButton 
+                      onClick={() => handleAddTaskToCategory(category)}
+                      title={`Add task to ${category}`}
+                    >
+                      <FaPlus />
+                    </AddToCategoryButton>
+                  </CategoryTitleArea>
+                  <CategoryStats>
+                    {categoryStats.completed}/{categoryStats.total} tasks
+                    <PointsTotal>{categoryStats.completed > 0 ? categoryStats.totalPoints : 0}/{categoryTasks.reduce((sum, task) => sum + (task.xpReward || 0), 0)} pts</PointsTotal>
+                  </CategoryStats>
+                </CategoryHeader>
+                
+                {categoryTasks.length === 0 ? (
+                  <EmptyCategory>
+                    No tasks in this category
+                    <EmptyCategoryButton onClick={() => handleAddTaskToCategory(category)}>
+                      Add a task
+                    </EmptyCategoryButton>
+                  </EmptyCategory>
+                ) : (
+                  categoryTasks.map(task => (
+                    <TaskItem key={task._id}>
+                      <Checkbox 
+                        type="checkbox" 
+                        checked={task.status === 'done'}
+                        onChange={() => handleTaskToggle(task)}
+                        disabled={loading}
+                        id={`task-checkbox-${task._id}`}
+                      />
+                      <TaskContent>
+                        <TaskTitle className={task.status === 'done' ? 'completed' : ''}>
+                          {task.title}
+                        </TaskTitle>
+                        <TaskDescription>{task.description}</TaskDescription>
+                      </TaskContent>
+                      <TaskActions>
+                        <TaskPoints>+{task.xpReward} pts</TaskPoints>
+                        <ActionButton onClick={() => startEditTask(task)}>
+                          <FaEdit />
+                        </ActionButton>
+                        <ActionButton onClick={() => handleDeleteTask(task._id)}>
+                          <FaTrash />
+                        </ActionButton>
+                      </TaskActions>
+                    </TaskItem>
+                  ))
+                )}
+              </CategorySection>
+            );
+          })}
 
 
     </DashboardContainer>
@@ -182,9 +496,18 @@ const FixedTrackerSection = styled.div`
   position: sticky;
   top: 70px;
   height: calc(100vh - 70px);
-  width: 350px;
+  width: 400px;
   overflow-y: auto;
   z-index: 90;
+  transition: width 0.3s ease;
+
+  @media (min-width: 1200px) {
+    width: 420px;
+  }
+  
+  @media (max-width: 768px) {
+    width: 320px;
+  }
 `;
 
 const DashboardContainer = styled.div`
@@ -194,6 +517,8 @@ const DashboardContainer = styled.div`
   background-color: transparent;
   overflow-y: auto;
   height: calc(100vh - 70px);
+  max-width: 1000px;
+  margin: 0 auto;
 `;
 
 const TrackerHeader = styled.div`
@@ -218,7 +543,7 @@ const TrackerHeader = styled.div`
 
 const StatsContainer = styled.div`
   display: flex;
-  justify-content: space-around;
+  justify-content: space-between;
   margin-bottom: 1.5rem;
   gap: 1rem;
   
@@ -315,15 +640,16 @@ const LoadingMessage = styled.div`
 const StatBox = styled.div`
   background-color: #2c3e50;
   border-radius: 12px;
-  padding: 1.25rem;
+  padding: 1.25rem 0.75rem;
   text-align: center;
   flex: 1;
   min-width: 100px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  transition: transform 0.2s ease;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
   
   &:hover {
     transform: translateY(-3px);
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
   }
 `;
 
@@ -363,6 +689,7 @@ const ResetButton = styled.button`
   color: #fff;
   cursor: pointer;
   display: block;
+  width: 100%;
   font-size: 0.9rem;
   font-weight: 600;
   margin: 0 auto 2rem;
@@ -380,6 +707,13 @@ const ResetButton = styled.button`
   &:active {
     transform: translateY(1px);
   }
+
+  &:disabled {
+    background: linear-gradient(135deg, #95a5a6, #7f8c8d);
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+  }
 `;
 
 const ResetDescription = styled.span`
@@ -396,9 +730,13 @@ const CategorySection = styled.div`
   padding: 1.5rem;
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.15);
   border-left: 4px solid #3498db;
-  max-width: 800px;
-  margin-left: auto;
-  margin-right: auto;
+  width: 100%;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+  
+  &:hover {
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+    transform: translateY(-2px);
+  }
 `;
 
 const CategoryHeader = styled.div`
@@ -455,12 +793,19 @@ const Checkbox = styled.input`
 
 const TaskContent = styled.div`
   flex: 1;
+  overflow: hidden;
 `;
 
 const TaskTitle = styled.div`
   font-size: 1rem;
   color: #fff;
   margin-bottom: 0.25rem;
+  transition: text-decoration 0.3s ease;
+  
+  &.completed {
+    text-decoration: line-through;
+    opacity: 0.7;
+  }
 `;
 
 const TaskDescription = styled.div`
@@ -475,7 +820,7 @@ const TaskPoints = styled.div`
   padding: 0.3rem 0.6rem;
   font-size: 0.85rem;
   font-weight: bold;
-  margin-left: 1rem;
+  margin-right: 0.5rem;
   border: 1px solid rgba(155, 89, 182, 0.3);
 `;
 
@@ -486,6 +831,7 @@ const TipsContainer = styled.div`
   margin-top: 2rem;
   margin-bottom: 1rem;
   box-shadow: 0 6px 18px rgba(41, 128, 185, 0.3);
+  width: 100%;
 `;
 
 const TipsHeader = styled.div`
@@ -505,6 +851,232 @@ const Tip = styled.div`
   font-size: 0.9rem;
   color: rgba(255, 255, 255, 0.8);
   line-height: 1.4;
+`;
+
+// New styled components for CRUD functionality
+const AddTaskButton = styled.button`
+  background: linear-gradient(135deg, #3498db, #2980b9);
+  border: none;
+  border-radius: 8px;
+  color: white;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0 0 1.5rem;
+  padding: 0.75rem 1.5rem;
+  transition: all 0.3s;
+  box-shadow: 0 4px 12px rgba(52, 152, 219, 0.3);
+  
+  &:hover {
+    background: linear-gradient(135deg, #2980b9, #3498db);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(52, 152, 219, 0.4);
+  }
+  
+  &:active {
+    transform: translateY(1px);
+  }
+`;
+
+const TaskFormContainer = styled.div`
+  background-color: #2c3e50;
+  border-radius: 12px;
+  margin-bottom: 1.5rem;
+  padding: 1.5rem;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.15);
+  border-left: 4px solid #3498db;
+`;
+
+const TaskForm = styled.form`
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+`;
+
+const TaskFormHeader = styled.div`
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+  
+  h3 {
+    color: white;
+    margin: 0;
+    font-size: 1.25rem;
+  }
+`;
+
+const CloseButton = styled.button`
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.7);
+  cursor: pointer;
+  font-size: 1.25rem;
+  padding: 0.25rem;
+  transition: color 0.2s;
+  
+  &:hover {
+    color: white;
+  }
+`;
+
+const FormGroup = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+`;
+
+const FormLabel = styled.label`
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 0.9rem;
+`;
+
+const FormInput = styled.input`
+  background-color: #34495e;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  color: white;
+  font-size: 1rem;
+  padding: 0.75rem;
+  transition: border-color 0.3s;
+  
+  &:focus {
+    border-color: #3498db;
+    outline: none;
+  }
+`;
+
+const FormTextarea = styled.textarea`
+  background-color: #34495e;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  color: white;
+  font-size: 1rem;
+  padding: 0.75rem;
+  resize: vertical;
+  transition: border-color 0.3s;
+  
+  &:focus {
+    border-color: #3498db;
+    outline: none;
+  }
+`;
+
+const FormSelect = styled.select`
+  background-color: #34495e;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  color: white;
+  font-size: 1rem;
+  padding: 0.75rem;
+  transition: border-color 0.3s;
+  
+  &:focus {
+    border-color: #3498db;
+    outline: none;
+  }
+  
+  option {
+    background-color: #2c3e50;
+  }
+`;
+
+const FormButton = styled.button`
+  background: linear-gradient(135deg, #3498db, #2980b9);
+  border: none;
+  border-radius: 8px;
+  color: white;
+  cursor: pointer;
+  font-size: 1rem;
+  font-weight: 600;
+  margin-top: 0.5rem;
+  padding: 0.75rem;
+  transition: all 0.3s;
+  
+  &:hover:not(:disabled) {
+    background: linear-gradient(135deg, #2980b9, #3498db);
+  }
+  
+  &:disabled {
+    background: linear-gradient(135deg, #95a5a6, #7f8c8d);
+    cursor: not-allowed;
+  }
+`;
+
+const TaskActions = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+`;
+
+const ActionButton = styled.button`
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.6);
+  cursor: pointer;
+  font-size: 0.9rem;
+  padding: 0.4rem;
+  transition: all 0.2s;
+  border-radius: 50%;
+  
+  &:hover {
+    color: white;
+    background-color: rgba(255, 255, 255, 0.1);
+  }
+`;
+
+const EmptyCategory = styled.div`
+  color: rgba(255, 255, 255, 0.5);
+  text-align: center;
+  padding: 1.5rem;
+  font-style: italic;
+`;
+
+// Additional styled components for category management
+const CategoryTitleArea = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+`;
+
+const AddToCategoryButton = styled.button`
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.6);
+  cursor: pointer;
+  font-size: 0.9rem;
+  padding: 0.4rem;
+  transition: all 0.2s;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  
+  &:hover {
+    color: white;
+    background-color: rgba(255, 255, 255, 0.1);
+  }
+`;
+
+const EmptyCategoryButton = styled.button`
+  background: linear-gradient(135deg, rgba(52, 152, 219, 0.2), rgba(155, 89, 182, 0.2));
+  border: 1px solid rgba(52, 152, 219, 0.3);
+  border-radius: 6px;
+  color: rgba(255, 255, 255, 0.8);
+  cursor: pointer;
+  font-size: 0.9rem;
+  margin-top: 0.75rem;
+  padding: 0.5rem 1rem;
+  transition: all 0.2s;
+  
+  &:hover {
+    background: linear-gradient(135deg, rgba(52, 152, 219, 0.3), rgba(155, 89, 182, 0.3));
+    color: white;
+  }
 `;
 
 export default Dashboard;

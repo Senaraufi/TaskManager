@@ -117,27 +117,33 @@ export const TaskProvider = ({ children }) => {
         const taskIndex = tasks.findIndex(task => task._id === id);
         if (taskIndex === -1) {
           setLoading(false);
+          resolve({ success: false, error: 'Task not found' });
           return;
         }
         
         const oldTask = tasks[taskIndex];
         const wasCompleted = oldTask.status !== 'done' && taskData.status === 'done';
+        const wasUncompleted = oldTask.status === 'done' && taskData.status === 'open';
         
         const updatedTask = {
           ...oldTask,
           ...taskData,
-          completedAt: wasCompleted ? new Date().toISOString() : oldTask.completedAt
+          completedAt: wasCompleted ? new Date().toISOString() : (wasUncompleted ? null : oldTask.completedAt)
         };
         
-        const updatedTasks = [...tasks];
-        updatedTasks[taskIndex] = updatedTask;
+        // Create a completely new array to ensure React detects the state change
+        const updatedTasks = tasks.map(task => 
+          task._id === id ? updatedTask : task
+        );
+        
+        // Update the state with the new tasks array
         setTasks(updatedTasks);
         
         let updatedUser = { ...user };
         
         // If task was completed, award XP
         if (wasCompleted) {
-          updatedUser.xp += updatedTask.completionXp;
+          updatedUser.xp += updatedTask.completionXp || 30;
           
           // Check if user should level up
           if (updatedUser.xp >= updatedUser.xpToNextLevel) {
@@ -149,13 +155,24 @@ export const TaskProvider = ({ children }) => {
           updateUserData(updatedUser);
         }
         
+        // If task was uncompleted, remove XP (optional)
+        if (wasUncompleted && oldTask.completionXp) {
+          // This is optional - you may want to remove XP when a task is unchecked
+          // Uncomment if you want this behavior
+          /*
+          updatedUser.xp = Math.max(0, updatedUser.xp - (oldTask.completionXp || 30));
+          updateUserData(updatedUser);
+          */
+        }
+        
         setLoading(false);
         
         resolve({
+          success: true,
           task: updatedTask,
           user: wasCompleted ? updatedUser : null
         });
-      }, 500);
+      }, 200); // Reduced timeout for better responsiveness
     });
   };
 
